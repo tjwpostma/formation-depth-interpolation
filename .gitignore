@@ -1,5 +1,6 @@
 output/**/*.npz
 output/**/*.grdecl
+output/**/console_output.log
 # keep the PNGs
 
 __pycache__/
