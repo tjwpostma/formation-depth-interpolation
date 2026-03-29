@@ -1,3 +1,6 @@
 output/**/*.npz
 output/**/*.grdecl
 # keep the PNGs
+
+__pycache__/
+*.pyc
