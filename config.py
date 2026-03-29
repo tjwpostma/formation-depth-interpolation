@@ -7,17 +7,22 @@ import os
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-WELL_CSV   = os.path.join(BASE_DIR, "well_data.csv")
-SHAPEFILE  = os.path.join(BASE_DIR, "california", "california.shp")
+
+# Basin name — drives both input paths. Change this to switch datasets.
+BASIN      = "parana_basin"
+
+WELL_CSV   = os.path.join(BASE_DIR, "input_wells",   f"{BASIN}_well_data.csv")
+WELL_SHP   = os.path.join(BASE_DIR, "input_wells",   f"wells_{BASIN}", f"wells_{BASIN}.shp")
+SHAPEFILE  = os.path.join(BASE_DIR, "input_boundary", BASIN, f"{BASIN}.shp")
 
 # Output directory (created automatically if it doesn't exist)
-OUT_DIR    = os.path.join(BASE_DIR, "output")
+OUT_DIR    = os.path.join(BASE_DIR, "output", BASIN)
 
 # ── Coordinate reference systems ──────────────────────────────────────────────
-# Input CRS for well CSV lat/lon and the shapefile
-CRS_INPUT  = "EPSG:4269"   # NAD83 geographic
-# Working / output CRS — metric, equal-area, appropriate for California
-CRS_WORK   = "EPSG:3310"   # NAD83 / California Albers (metres)
+# Well locations are read from a shapefile whose CRS is embedded in its .prj
+# file and reprojected automatically — no CRS_INPUT needed.
+# Working / output CRS — metric, covers all of Brazil
+CRS_WORK   = "EPSG:5880"   # SIRGAS 2000 / Brazil Polyconic (metres)
 
 # ── Interpolation grid ────────────────────────────────────────────────────────
 # Cell size of the interpolation grid in metres (EPSG:3310 units).

@@ -54,19 +54,23 @@ Steps 2 and 3 are independent of each other and both depend on step 1.
 ├── interpolate.py         # Kriging interpolation engine
 ├── plot_maps.py           # Map generation
 ├── cpg_export.py          # GRDECL corner-point grid export
-├── well_data.csv          # Input well observations
-├── california/            # Polygon boundary shapefile
-│   ├── california.shp
-│   ├── california.dbf
-│   ├── california.prj
-│   └── california.shx
+├── input_wells/           # Well data, one subdirectory per basin
+│   ├── california_well_data.csv          # Horizon attributes (no coordinates)
+│   └── wells_california/                 # Well location shapefile
+│       ├── wells_california.shp
+│       └── ...
+├── input_boundary/        # Boundary polygon shapefiles, one subdirectory per basin
+│   └── california/
+│       ├── california.shp
+│       └── ...
 └── output/                # Created automatically on first run
-    ├── interp_results.npz
-    ├── grid.grdecl
-    ├── map_depth_top.png
-    ├── map_depth_bot.png
-    ├── map_thickness.png
-    └── map_porosity.png
+    └── california/        # One subdirectory per basin (matches BASIN in config.py)
+        ├── interp_results.npz
+        ├── grid.grdecl
+        ├── map_depth_top.png
+        ├── map_depth_bot.png
+        ├── map_thickness.png
+        └── map_porosity.png
 ```
 
 ---
@@ -103,39 +107,38 @@ pip install numpy pandas geopandas shapely scipy matplotlib pykrige
 
 ## Input Data
 
+### Well shapefile
+
+**Path:** `input_wells/wells_<basin>/wells_<basin>.shp`
+
+A point shapefile with one feature per well. The CRS is read from the embedded `.prj` file and reprojected to `CRS_WORK` automatically — no manual CRS configuration is needed for the wells. The only requirement is that the attribute table contains a well identifier column whose name matches the first column of the well data CSV.
+
 ### Well CSV
 
-**File:** `well_data.csv`
+**File:** `input_wells/<basin>_well_data.csv`
 
-The well data file must be a CSV with the following columns (header row required):
+Contains the horizon attributes for each well. The first column is the well identifier (the column name must match the identifier field in the shapefile). The remaining columns are:
 
 | Column | Type | Units | Description |
 |--------|------|-------|-------------|
-| `well_id` | string | — | Unique well identifier label |
-| `lat` | float | decimal degrees | Latitude (WGS84 / NAD83) |
-| `lon` | float | decimal degrees | Longitude (WGS84 / NAD83) |
+| *(first column)* | string | — | Well identifier — must match the shapefile attribute name |
 | `depth_top` | float | metres | Depth to the top of the formation |
 | `depth_bot` | float | metres | Depth to the base of the formation |
 | `thickness` | float | metres | Formation thickness (`depth_bot − depth_top`) |
 | `porosity` | float | fraction (0–1) | Vertically-averaged porosity |
 
-Example row:
+Example row (california, where the ID column is `well_id`):
 ```
-W01,38.90291,-121.74683,1881,1981,100,0.13
+W01,1881,1981,100,0.13
 ```
 
-> **Duplicate locations:** If two or more wells share the same projected coordinates (within 0.1 m), the script automatically averages their attribute values to avoid a singular kriging matrix. Merged well IDs are reported in the console output.
+The two files are joined on the shared well ID column. Wells present in only one file are dropped with a warning. If two or more wells share the same projected coordinates (within 0.1 m), their attribute values are averaged to avoid a singular kriging matrix.
 
 ### Shapefile boundary
 
-**Directory:** `california/` (or any path set in `config.SHAPEFILE`)
+**Path:** `input_boundary/<basin>/<basin>.shp`
 
 A polygon shapefile defining the region of interest. The kriging is performed over the full bounding box of this polygon, then grid points and CPG cells outside the polygon are masked (`NaN` / `ACTNUM = 0`). The shapefile may use any CRS — it is reprojected to `CRS_WORK` automatically.
-
-To use a different region:
-1. Place your shapefile in a subdirectory.
-2. Update `SHAPEFILE` in `config.py` to point to the `.shp` file.
-3. Update `CRS_INPUT` / `CRS_WORK` if appropriate for your region.
 
 ---
 
@@ -147,18 +150,19 @@ All parameters live in one place. Edit `config.py` before running any script.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `WELL_CSV` | `well_data.csv` (beside `config.py`) | Path to the input well CSV |
-| `SHAPEFILE` | `california/california.shp` | Path to the region-of-interest shapefile |
-| `OUT_DIR` | `output/` | Directory for all outputs (auto-created) |
+| `BASIN` | `"california"` | Basin name — drives all input paths. Change this to switch datasets. |
+| `WELL_CSV` | `input_wells/<BASIN>_well_data.csv` | Derived automatically from `BASIN` |
+| `WELL_SHP` | `input_wells/wells_<BASIN>/wells_<BASIN>.shp` | Derived automatically from `BASIN` |
+| `SHAPEFILE` | `input_boundary/<BASIN>/<BASIN>.shp` | Derived automatically from `BASIN` |
+| `OUT_DIR` | `output/<BASIN>` | Directory for all outputs (auto-created) |
 
 ### Coordinate Reference Systems
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `CRS_INPUT` | `EPSG:4269` (NAD83 geographic) | CRS of the well lat/lon coordinates and the shapefile |
-| `CRS_WORK` | `EPSG:3310` (NAD83 / California Albers, metres) | Metric equal-area CRS for kriging and grid construction |
+| `CRS_WORK` | `EPSG:5880` (SIRGAS 2000 / Brazil Polyconic, metres) | Metric projected CRS for kriging and grid construction. All input shapefiles are reprojected to this automatically. |
 
-> Change `CRS_WORK` to any projected metric CRS appropriate for your region (e.g. `EPSG:32633` for UTM zone 33N).
+> Set `CRS_WORK` to a projected metric CRS that covers your study area. See [**Coordinate Reference Systems**](#coordinate-reference-systems) for a table of recommended options by region.
 
 ### Interpolation Grid
 
@@ -173,10 +177,12 @@ A finer resolution produces smoother maps but increases kriging time quadratical
 | Parameter | Default | Options | Description |
 |-----------|---------|---------|-------------|
 | `VARIOGRAM_MODEL` | `"spherical"` | `spherical`, `gaussian`, `exponential`, `linear`, `power` | Theoretical variogram model |
-| `DRIFT_TERMS` | `["regional_linear"]` | `["regional_linear"]`, `["point_log"]`, `[]` | Drift functions for Universal Kriging. Empty list = Ordinary Kriging |
+| `DRIFT_TERMS` | `["regional_linear"]` | `["regional_linear"]`, `["point_log"]`, `[]` | Drift functions for Universal Kriging of **depth_top only**. Thickness and porosity always use Ordinary Kriging — see [Kriging Background](#kriging-background). |
 | `VARIOGRAM_NLAGS` | `8` | integer | Number of lag bins for the experimental variogram |
 
 > With `DRIFT_TERMS = []` the script falls back to Ordinary Kriging, which is appropriate when no regional trend is present.
+
+> See [**Kriging Background**](#kriging-background) for a full explanation of these parameters and a practical tuning workflow.
 
 ### Maps
 
@@ -353,7 +359,7 @@ END
 
 ## Outputs
 
-All outputs are written to `OUT_DIR` (`output/` by default):
+All outputs are written to `OUT_DIR` (`output/<basin>` by default):
 
 | File | Created by | Description |
 |------|-----------|-------------|
@@ -368,24 +374,49 @@ All outputs are written to `OUT_DIR` (`output/` by default):
 
 ## Coordinate Reference Systems
 
-The workflow uses two CRS:
+**Why a projected CRS?** Kriging requires a Euclidean distance metric. Geographic coordinates (degrees) produce distorted distance calculations, especially at mid-latitudes. A metric projected CRS ensures that distance-based semivariogram fitting is physically meaningful and that cell area / volume calculations are correct.
 
-| Role | Default EPSG | Name | Units |
-|------|-------------|------|-------|
-| Input (wells + shapefile) | 4269 | NAD83 geographic | degrees |
-| Working / output | 3310 | NAD83 / California Albers | metres |
+All input shapefiles (wells and boundary) carry their own CRS in the `.prj` file and are reprojected to `CRS_WORK` automatically. You only need to set `CRS_WORK` once in `config.py`.
 
-**Why reproject?** Kriging requires a Euclidean distance metric. Geographic coordinates (degrees) produce distorted distance calculations, especially at mid-latitudes. A metric equal-area projection ensures that distance-based semivariogram fitting is physically meaningful and that cell area / volume calculations are correct.
+### Choosing a working CRS
 
-To adapt for a different region, change `CRS_WORK` to an appropriate metric CRS. Examples:
+Pick a **projected, metric** CRS that covers your study area with reasonably low distortion. For basin-scale work (tens to a few hundred kilometres across) the distortion introduced by any of the options below is far smaller than well-data uncertainty, so any reasonable choice will do.
 
-| Region | Recommended CRS_WORK |
-|--------|---------------------|
-| California | `EPSG:3310` — NAD83 / California Albers |
-| Continental US | `EPSG:5070` — NAD83 / Conus Albers |
-| UK / North Sea | `EPSG:27700` — British National Grid |
-| Europe | `EPSG:3035` — ETRS89-LAEA |
-| Global (WGS84) | `EPSG:4326` → use a local UTM zone instead |
+**General-purpose options — valid anywhere on Earth:**
+
+| CRS | EPSG | Notes |
+|-----|------|-------|
+| UTM zone for your area | see table below | Best geometric accuracy within the 6° zone; use when your basin fits comfortably in one zone |
+| World Mercator | `EPSG:3395` | Good up to ~70° latitude; avoid near the poles |
+| WGS 84 / Pseudo-Mercator | `EPSG:3857` | Widespread web-mapping CRS; metric but area-distorted at high latitudes — acceptable for rough estimates |
+
+To find your UTM zone: divide your central longitude by 6, round up, and prepend 326 (northern hemisphere) or 327 (southern hemisphere). For example, a basin centred at 50°E in the southern hemisphere → zone 38S → `EPSG:32738`.
+
+**Brazil and South America:**
+
+| Region | EPSG | Name |
+|--------|------|------|
+| All of Brazil (recommended default) | `EPSG:5880` | SIRGAS 2000 / Brazil Polyconic |
+| Brazil — south / Paraná Basin | `EPSG:31982` | SIRGAS 2000 / UTM zone 22S |
+| Brazil — north / Amazon | `EPSG:31974` | SIRGAS 2000 / UTM zone 20S |
+| Brazil — offshore pre-salt | `EPSG:31983` | SIRGAS 2000 / UTM zone 23S |
+| South America (continental) | `EPSG:102033` | South America Albers Equal Area |
+
+**Major oil and gas regions:**
+
+| Region | EPSG | Name |
+|--------|------|------|
+| North Sea (UK sector) | `EPSG:27700` | British National Grid |
+| North Sea (Norwegian sector) | `EPSG:23032` | ED50 / UTM zone 32N |
+| North Sea (Dutch sector) | `EPSG:28992` | Amersfoort / RD New |
+| Middle East / Arabian Peninsula | `EPSG:32638` | WGS 84 / UTM zone 38N |
+| Permian Basin / US Southwest | `EPSG:32613` | WGS 84 / UTM zone 13N |
+| Gulf of Mexico | `EPSG:32615` | WGS 84 / UTM zone 15N |
+| West Siberia | `EPSG:32642` | WGS 84 / UTM zone 42N |
+| Caspian / Kazakhstan | `EPSG:32639` | WGS 84 / UTM zone 39N |
+| West Africa (Gulf of Guinea) | `EPSG:32632` | WGS 84 / UTM zone 32N |
+| California | `EPSG:3310` | NAD83 / California Albers |
+| Alberta / Western Canada | `EPSG:3400` | NAD83 / Alberta 10-TM (Forest) |
 
 ---
 
@@ -399,11 +430,49 @@ where $f_k$ are known drift functions (e.g. a linear trend in $x$ and $y$), $a_k
 
 ### Implemented via PyKrige
 
-This workflow uses [`pykrige.uk.UniversalKriging`](https://geostat-framework.readthedocs.io/projects/pykrige/en/stable/generated/pykrige.uk.UniversalKriging.html). Key settings:
+This workflow uses [`pykrige.uk.UniversalKriging`](https://geostat-framework.readthedocs.io/projects/pykrige/en/stable/generated/pykrige.uk.UniversalKriging.html). The three key parameters — variogram model, drift terms, and lag count — are all set in `config.py` and explained in detail below.
 
-- **`variogram_model`** — shape of the theoretical semivariogram. `spherical` is the most common choice for geological data; it reaches a finite sill at a finite range.
-- **`drift_terms = ["regional_linear"]`** — models a linear trend surface $f(x, y) = a_0 + a_1 x + a_2 y$, appropriate when the formation has a regional structural dip.
-- **`nlags`** — number of lag distance bins used to compute the experimental semivariogram from which model parameters are fitted automatically.
+#### Variogram model
+
+The **variogram** quantifies how spatial correlation between well observations decays with distance. The theoretical model is fitted to an experimental variogram computed from your data, and its shape directly controls how the interpolated surface behaves away from wells.
+
+| Model | Behaviour | When to use |
+|---|---|---|
+| `spherical` | Rises steadily then **flattens** at a finite range and sill | **Default for geology.** Correct for formations where spatial correlation exists up to a finite distance and then vanishes — the standard choice in petroleum geostatistics. |
+| `exponential` | Rises steeply near origin, asymptotically approaches sill | Similar to spherical but correlation decays more slowly near the range. Useful when the transition to uncorrelated behaviour is gradual. |
+| `gaussian` | Very smooth, parabolic near the origin | For highly continuous phenomena. Can cause numerical instability with sparse well data — use with caution. |
+| `linear` | Rises indefinitely, no sill | No finite range of correlation. Rarely appropriate for formation tops. |
+| `power` | Fractal-like, no sill | Self-similar roughness. Rarely appropriate for formation depths or thicknesses. |
+
+For formation-top and thickness interpolation, **`spherical`** is the standard starting point. Only switch models if your experimental variogram clearly shows a different shape.
+
+#### Drift terms
+
+Drift terms switch kriging from **Ordinary Kriging** (assumes a constant unknown mean) to **Universal Kriging** (assumes a spatially varying mean). They model a large-scale deterministic trend explicitly; kriging then fits the residual, smaller-scale spatial variability on top of it.
+
+In this workflow, `DRIFT_TERMS` applies **only to `depth_top`**. Thickness and porosity always use Ordinary Kriging:
+- A linear drift on **thickness** would imply systematic basin-wide wedging — a specific geological claim rather than a safe default. Thickness variability is better treated as a purely spatial random field.
+- A linear drift on **porosity** has no physical basis in a structural context.
+
+| Setting | What it models | When to use |
+|---|---|---|
+| `["regional_linear"]` | Linear plane $z = a_0 + a_1 x + a_2 y$ | **Default.** Captures a regional structural dip — almost all sedimentary basins have a systematic deepening direction. Extrapolates sensibly into data-sparse areas. |
+| `[]` | No trend — Ordinary Kriging | Use when depth shows no systematic directional gradient, or when you have very few wells (< ~10) and UK becomes over-parameterised. |
+| `["point_log"]` | Logarithmic trend around a central point | Radially symmetric phenomena. Rarely applicable to formation mapping. |
+
+#### Lag bins (`VARIOGRAM_NLAGS`)
+
+The experimental variogram is built by grouping all well pairs into distance bins (lags) and averaging their squared depth differences $\frac{1}{2}[\Delta z]^2$ within each bin. `VARIOGRAM_NLAGS` controls how many bins to use.
+
+- **Too few (< 6):** Bins are wide — produces a smooth but coarse experimental variogram that may miss the true correlation range.
+- **Too many (> 20):** Bins are narrow — produces a noisy, erratic variogram, especially at large distances where few pairs exist.
+- **Rule of thumb:** Aim for at least **30 well pairs per lag bin** and cover lags up to roughly **half the maximum inter-well distance**. The default of `8` is a safe, conservative starting point.
+
+#### Practical tuning workflow
+
+1. **Check for a regional trend first.** Plot your well `depth_top` values coloured by magnitude on a map. If there is a clear gradient across the basin, keep `drift_terms = ["regional_linear"]`. If depth is patchy with no strong directional signal, switch to `[]`.
+2. **Inspect the variogram fit.** Temporarily set `enable_plotting=True` in `interpolate.py` — pykrige will display the fitted model overlaid on the experimental points. If the fit is poor, try a different `VARIOGRAM_MODEL`.
+3. **Adjust lag count if needed.** If the experimental variogram looks erratic, reduce `VARIOGRAM_NLAGS`. If it looks too coarse to resolve the correlation structure, increase it gradually and refit.
 
 ### Kriging variance
 
@@ -466,10 +535,10 @@ This usually means two or more wells are at identical projected coordinates. The
 
 ### Negative thickness values in the kriging output
 
-Outside the data cloud, kriging can extrapolate to unphysical values. These cells will be masked `NaN` if they fall outside the shapefile, but if they are inside the region you may need to:
-- Constrain kriging with a non-negativity post-processing step (clamp `z_thick = np.maximum(z_thick, 0)`).
-- Add more wells at the boundary of the region.
-- Switch to a variogram model with a shorter effective range (e.g. `exponential`).
+Kriging can extrapolate to unphysical negative values in data-sparse or boundary areas. `interpolate.py` automatically clamps any negative thickness to zero and prints a warning with the cell count — check the console output after running it. If many cells are affected it suggests the variogram is over-fitting a regional dip that doesn't hold at the basin edge; consider:
+- Switching to Ordinary Kriging (`DRIFT_TERMS = []`) to remove the linear extrapolation.
+- Adding more wells at the boundary of the region.
+- Using a variogram model with a shorter effective range (e.g. `exponential`).
 
 ### Contours do not appear on the maps
 

@@ -67,18 +67,18 @@ python plot_maps.py
 
 This produces four PNG files in `output/`. Open them in any image viewer:
 
-- `output/map_depth_top.png` — depth to the top of the formation
-- `output/map_depth_bot.png` — depth to the base of the formation
-- `output/map_thickness.png` — formation thickness
-- `output/map_porosity.png` — vertically-averaged porosity
+- `output/<basin>/map_depth_top.png` — depth to the top of the formation
+- `output/<basin>/map_depth_bot.png` — depth to the base of the formation
+- `output/<basin>/map_thickness.png` — formation thickness
+- `output/<basin>/map_porosity.png` — vertically-averaged porosity
 
-## Step 6 — Export the corner-point grid
+## Step 6 — For reservoir simulations: export a corner-point grid
 
 ```bash
 python cpg_export.py
 ```
 
-This writes `output/grid.grdecl`. The file can be loaded directly into:
+This writes `output/<basin>/grid.grdecl`. The file can be loaded directly into:
 - **Eclipse** (Schlumberger / SLB)
 - **OPM Flow** (open-source)
 - **tNavigator** (RFD)
@@ -87,11 +87,12 @@ This writes `output/grid.grdecl`. The file can be loaded directly into:
 
 ## Step 7 — Adapt to your own data
 
-1. **Replace `well_data.csv`** with your own well observations, keeping the same column names.
-2. **Replace the shapefile** in `california/` (or a new subdirectory) with your study-area polygon.
-3. **Edit `config.py`:**
-   - Set `WELL_CSV` and `SHAPEFILE` to your new file paths.
-   - Set `CRS_INPUT` to match your data's CRS.
-   - Set `CRS_WORK` to a metric CRS appropriate for your region.
-   - Adjust `GRID_RESOLUTION_M`, `CPG_DX/DY/NZ`, and kriging parameters as needed.
-4. **Re-run** all three scripts in order.
+1. **Add your well attribute CSV** to `input_wells/` named `<basin>_well_data.csv`. The first column must be the well identifier; remaining columns are `depth_top`, `depth_bot`, `thickness`, `porosity`.
+2. **Add your well location shapefile** to `input_wells/wells_<basin>/wells_<basin>.shp`. The identifier attribute name must match the first column header of the CSV.
+3. **Add your boundary shapefile** to `input_boundary/<basin>/<basin>.shp`.
+4. **Edit `config.py`:**
+   - Set `BASIN` to your basin name — all input paths are derived from it automatically.
+   - Set `CRS_WORK` to a projected metric CRS covering your study area. See the [Coordinate Reference Systems](README.md#coordinate-reference-systems) section in the README for recommended options by region.
+   - Adjust `GRID_RESOLUTION_M` and `CPG_DX/DY/NZ` as needed.
+   - Review the kriging parameters (`VARIOGRAM_MODEL`, `DRIFT_TERMS`, `VARIOGRAM_NLAGS`). For most sedimentary basin applications the defaults (`spherical`, `["regional_linear"]`, `8`) are a good starting point. See [Kriging Background](README.md#kriging-background) in the README for a full explanation of each parameter and a practical tuning workflow.
+5. **Re-run** all three scripts in order.

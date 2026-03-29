@@ -1,7 +1,8 @@
 """
-interpolate.py — Reproject wells and shapefile to EPSG:3310, run Universal
-Kriging on depth_top and thickness, apply the shapefile mask, and save
-all results to output/interp_results.npz.
+interpolate.py — Load well locations from shapefile, join horizon attributes
+from CSV, reproject to CRS_WORK, run Universal Kriging on depth_top,
+thickness and porosity, apply the shapefile mask, and save all results to
+output/interp_results.npz.
 
 Run:
     conda activate geoint
@@ -23,35 +24,48 @@ os.makedirs(config.OUT_DIR, exist_ok=True)
 
 # ── 1. Load and reproject well data ───────────────────────────────────────────
 print("Loading well data …")
+
+# Geometry from shapefile — CRS embedded in .prj, reprojected automatically
+# Keep only the ID column and geometry so CSV attributes don't collide on merge
+_well_shp_full = gpd.read_file(config.WELL_SHP).to_crs(config.CRS_WORK)
+
+# Attributes from CSV; first column header is the well ID field name
+# porosity is coerced to numeric so empty cells / non-numerical fillers become NaN
 df = pd.read_csv(config.WELL_CSV)
+well_id_col = df.columns[0]
+df["porosity"] = pd.to_numeric(df["porosity"], errors="coerce")
 
-well_gdf = gpd.GeoDataFrame(
-    df,
-    geometry=gpd.points_from_xy(df["lon"], df["lat"]),
-    crs=config.CRS_INPUT,
-)
-well_gdf = well_gdf.to_crs(config.CRS_WORK)
+well_shp = _well_shp_full[[well_id_col, "geometry"]].copy()
 
-print(f"  {len(well_gdf)} wells reprojected to {config.CRS_WORK}")
+# Ensure the shapefile also has the ID column (may differ in dtype — coerce both to str)
+well_shp[well_id_col] = well_shp[well_id_col].astype(str)
+df[well_id_col]       = df[well_id_col].astype(str)
+
+# Inner join: only wells present in both files are kept
+well_gdf = well_shp.merge(df, on=well_id_col, how="inner")
+
+n_shp, n_csv, n_join = len(well_shp), len(df), len(well_gdf)
+if n_join < max(n_shp, n_csv):
+    print(f"  Warning: {n_shp} shapefile wells + {n_csv} CSV rows → {n_join} matched "
+          f"({n_shp - n_join} shapefile-only, {n_csv - n_join} CSV-only records dropped)")
+print(f"  {n_join} wells loaded in {config.CRS_WORK}")
 
 # ── Deduplicate wells at identical projected locations ─────────────────────────
-# (Duplicate lat/lon records produce a singular kriging matrix)
+# (Duplicate location records produce a singular kriging matrix)
 well_gdf["_x"] = well_gdf.geometry.x.round(1)
 well_gdf["_y"] = well_gdf.geometry.y.round(1)
 n_before = len(well_gdf)
 well_gdf = (
     well_gdf
     .groupby(["_x", "_y"], as_index=False)
-    .agg(
-        well_id   = ("well_id",    lambda s: "+".join(s)),
-        lat       = ("lat",        "mean"),
-        lon       = ("lon",        "mean"),
-        depth_top = ("depth_top",  "mean"),
-        depth_bot = ("depth_bot",  "mean"),
-        thickness = ("thickness",  "mean"),
-        porosity  = ("porosity",   "mean"),
-        geometry  = ("geometry",   "first"),
-    )
+    .agg(**{
+        well_id_col: (well_id_col, lambda s: "+".join(s.astype(str))),
+        "depth_top": ("depth_top", "mean"),
+        "depth_bot": ("depth_bot", "mean"),
+        "thickness": ("thickness", "mean"),
+        "porosity":  ("porosity",  "mean"),
+        "geometry":  ("geometry",  "first"),
+    })
 )
 well_gdf = gpd.GeoDataFrame(well_gdf, geometry="geometry", crs=config.CRS_WORK)
 n_after = len(well_gdf)
@@ -63,7 +77,7 @@ wy = well_gdf.geometry.y.values
 depth_top_vals = well_gdf["depth_top"].values.astype(float)
 thickness_vals = well_gdf["thickness"].values.astype(float)
 porosity_vals  = well_gdf["porosity"].values.astype(float)
-well_ids       = well_gdf["well_id"].values
+well_ids       = well_gdf[well_id_col].values
 
 print(f"  Easting  range: {wx.min():.0f} – {wx.max():.0f} m")
 print(f"  Northing range: {wy.min():.0f} – {wy.max():.0f} m")
@@ -116,12 +130,16 @@ z_top_flat, ss_top_flat = uk_top.execute(
 z_top = z_top_flat.reshape(xx.shape)
 ss_top = ss_top_flat.reshape(xx.shape)
 
-# ── 6. Universal Kriging — thickness ──────────────────────────────────────────
+# ── 6. Ordinary Kriging — thickness ──────────────────────────────────────────
+# Thickness is interpolated without a drift term: a regional linear trend in
+# thickness would imply systematic basin-wide wedging, which is a specific
+# geological claim rather than a safe default. Ordinary Kriging lets the
+# variogram capture local thickness variability without that assumption.
 print("Kriging thickness …")
 uk_thick = UniversalKriging(
     wx, wy, thickness_vals,
     variogram_model=config.VARIOGRAM_MODEL,
-    drift_terms=config.DRIFT_TERMS,
+    drift_terms=[],
     nlags=config.VARIOGRAM_NLAGS,
     verbose=False,
     enable_plotting=False,
@@ -135,12 +153,16 @@ z_thick_flat, ss_thick_flat = uk_thick.execute(
 z_thick = z_thick_flat.reshape(xx.shape)
 ss_thick = ss_thick_flat.reshape(xx.shape)
 
-# ── 7. Universal Kriging — porosity ──────────────────────────────────────────
-print("Kriging porosity …")
+# ── 7. Ordinary Kriging — porosity ───────────────────────────────────────────
+# Porosity has no systematic regional trend (unlike structural depth), so drift
+# terms are always disabled here regardless of config.DRIFT_TERMS.
+# Only wells with a valid (non-NaN) porosity value are used
+poro_valid = ~np.isnan(porosity_vals)
+print(f"Kriging porosity … ({poro_valid.sum()} / {len(porosity_vals)} wells have porosity data)")
 uk_poro = UniversalKriging(
-    wx, wy, porosity_vals,
+    wx[poro_valid], wy[poro_valid], porosity_vals[poro_valid],
     variogram_model=config.VARIOGRAM_MODEL,
-    drift_terms=config.DRIFT_TERMS,
+    drift_terms=[],
     nlags=config.VARIOGRAM_NLAGS,
     verbose=False,
     enable_plotting=False,
@@ -154,7 +176,15 @@ z_poro_flat, ss_poro_flat = uk_poro.execute(
 z_poro  = z_poro_flat.reshape(xx.shape)
 ss_poro = ss_poro_flat.reshape(xx.shape)
 
-# ── 8. Derive depth_bot; apply mask ───────────────────────────────────────────
+# ── 8. Clamp thickness, derive depth_bot, apply mask ─────────────────────────
+# Kriging can extrapolate to negative thickness in data-sparse or boundary areas.
+# Clamp to zero so depth_bot is always >= depth_top.
+neg_cells = int(np.sum((z_thick < 0) & mask))
+if neg_cells:
+    print(f"  Warning: {neg_cells} in-region cell(s) had negative kriged thickness "
+          f"— clamped to 0.")
+z_thick = np.maximum(z_thick, 0.0)
+
 z_bot = z_top + z_thick
 
 # NaN outside the region (do NOT modify in-region values)
