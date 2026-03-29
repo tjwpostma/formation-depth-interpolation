@@ -135,6 +135,8 @@ Contains the horizon attributes for each well. The first column is the well iden
 | `thickness` | float | metres | Formation thickness (`depth_bot − depth_top`) |
 | `porosity` | float | fraction (0–1) | Vertically-averaged porosity |
 
+> **Depth convention:** all depth values must be **positive downward** (increasing with depth below surface). This is the standard well-log and Eclipse convention used throughout the workflow.
+
 Example row (california, where the ID column is `well_id`):
 ```
 W01,1881,1981,100,0.13
@@ -493,6 +495,10 @@ The output includes the kriging variance (`ss_*` arrays), which is a by-product 
 ## Corner-Point Grid Format
 
 The GRDECL format is the standard grid description file for Eclipse-family reservoir simulators (including OGS, tNavigator, and others). Key conventions used in this implementation:
+
+### Depth convention
+
+All Z-coordinates are **positive downward** — a value of `2000` means 2000 m below the surface datum. This is consistent with the input well CSV, the Eclipse GRDECL format, and standard well-log convention. Never supply negative depth values (elevation-style coordinates) as input.
 
 ### Pillar convention (NW origin)
 

@@ -1,6 +1,6 @@
 # Quickstart Guide
 
-This guide walks you through running the workflow end-to-end on the included California dataset. For full documentation see [README.md](README.md).
+This guide walks you through running the workflow end-to-end on the included Parana Basin dataset. For full documentation see [README.md](README.md).
 
 ## Prerequisites
 
@@ -25,9 +25,9 @@ conda install -c conda-forge numpy pandas geopandas shapely scipy matplotlib pyk
 
 > First-time install may take 2–5 minutes while conda resolves the environment.
 
-## Step 3 — Inspect the sample data (optional)
+## Step 3 — Inspect the sample data
 
-Open `well_data.csv` in any text editor or spreadsheet application to see the 24 sample wells spread across California. Open `config.py` to review the default settings — no changes are needed to run the demo.
+Open `parana_basin_well_data.csv` in any text editor or spreadsheet application to see the 39 sample wells spread across the Parana Basin. Open `config.py` to review the default settings — no changes are needed to run the demo.
 
 ## Step 4 — Run the workflow
 
