@@ -29,7 +29,17 @@ conda install -c conda-forge numpy pandas geopandas shapely scipy matplotlib pyk
 
 Open `well_data.csv` in any text editor or spreadsheet application to see the 24 sample wells spread across California. Open `config.py` to review the default settings — no changes are needed to run the demo.
 
-## Step 4 — Run the interpolation
+## Step 4 — Run the workflow
+
+You can run all three scripts in one go:
+
+```bash
+bash run_all.sh
+```
+
+This runs `interpolate.py`, `plot_maps.py`, and `cpg_export.py` in order and saves all console output to `output/<basin>/console_output.log`. The script stops immediately if any step fails.
+
+Alternatively, run the scripts individually:
 
 ```bash
 python interpolate.py
@@ -54,12 +64,12 @@ Kriging porosity …
   Estimated pore volume: …e+… m³  (… km³)
 
 Results saved → output/interp_results.npz
-Done. Run plot_maps.py and cpg_export.py next.
+Done. Run plot_maps.py next.
 ```
 
 > Runtime: ~10–30 seconds on a modern laptop for the 5000 m grid.
 
-## Step 5 — Generate maps
+## Step 5 — Generate maps (individual run)
 
 ```bash
 python plot_maps.py
@@ -72,18 +82,22 @@ This produces four PNG files in `output/`. Open them in any image viewer:
 - `output/<basin>/map_thickness.png` — formation thickness
 - `output/<basin>/map_porosity.png` — vertically-averaged porosity
 
-## Step 6 — For reservoir simulations: export a corner-point grid
+## Step 6 — Export a corner-point grid (optional, for reservoir simulation)
+
+This step is only needed if you want to run a reservoir simulation. It exports the kriged surfaces as an Eclipse-format corner-point grid.
 
 ```bash
 python cpg_export.py
 ```
 
-This writes `output/<basin>/grid.grdecl`. The file can be loaded directly into:
+This writes `output/<basin>/grid.grdecl`, which can be loaded directly into:
 - **Eclipse** (Schlumberger / SLB)
 - **OPM Flow** (open-source)
 - **tNavigator** (RFD)
 - **Petrel** (via GRDECL import)
 - **ResInsight** (open-source visualisation)
+
+To include this step when using `run_all.sh`, uncomment the `cpg_export.py` block near the bottom of that script.
 
 ## Step 7 — Adapt to your own data
 
@@ -95,4 +109,4 @@ This writes `output/<basin>/grid.grdecl`. The file can be loaded directly into:
    - Set `CRS_WORK` to a projected metric CRS covering your study area. See the [Coordinate Reference Systems](README.md#coordinate-reference-systems) section in the README for recommended options by region.
    - Adjust `GRID_RESOLUTION_M` and `CPG_DX/DY/NZ` as needed.
    - Review the kriging parameters (`VARIOGRAM_MODEL`, `DRIFT_TERMS`, `VARIOGRAM_NLAGS`). For most sedimentary basin applications the defaults (`spherical`, `["regional_linear"]`, `8`) are a good starting point. See [Kriging Background](README.md#kriging-background) in the README for a full explanation of each parameter and a practical tuning workflow.
-5. **Re-run** all three scripts in order.
+5. **Re-run** the interpolation and map scripts — either individually or with `bash run_all.sh`. Uncomment the `cpg_export.py` block in `run_all.sh` if you also need the corner-point grid.

@@ -36,9 +36,11 @@ echo ""
     conda run -n geoint python plot_maps.py
     echo ""
 
-    echo "--- cpg_export.py ---"
-    conda run -n geoint python cpg_export.py
-    echo ""
+    # Uncomment the block below to also export a corner-point grid (GRDECL) for
+    # reservoir simulation in Eclipse, OPM Flow, Petrel, tNavigator, etc.
+    # echo "--- cpg_export.py ---"
+    # conda run -n geoint python cpg_export.py
+    # echo ""
 
     echo "======================================================================"
     echo " Finished: $(date)"

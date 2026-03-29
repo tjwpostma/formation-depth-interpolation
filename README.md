@@ -40,9 +40,17 @@ The workflow is split into three independent scripts, each configured entirely t
 |------|--------|--------------|
 | 1 | `interpolate.py` | Loads wells, reprojects, kriging interpolation, saves `.npz` |
 | 2 | `plot_maps.py` | Reads `.npz`, plots four PNG maps |
-| 3 | `cpg_export.py` | Reads `.npz`, builds and writes `grid.grdecl` |
+| 3 *(optional)* | `cpg_export.py` | Reads `.npz`, builds and writes `grid.grdecl` for reservoir simulation |
 
-Steps 2 and 3 are independent of each other and both depend on step 1.
+Steps 2 and 3 are independent of each other and both depend on step 1. Step 3 is only needed for reservoir simulation workflows.
+
+Steps 1 and 2 can be run in one go using the provided shell script, which also writes all console output to `output/<basin>/console_output.log`:
+
+```bash
+bash run_all.sh
+```
+
+To include the CPG export, uncomment the `cpg_export.py` block in `run_all.sh`.
 
 ---
 
@@ -215,6 +223,8 @@ conda activate geoint
 python interpolate.py
 ```
 
+Or run all three scripts together with `bash run_all.sh` (see [Overview](#overview)).
+
 #### Processing steps
 
 | Step | Description |
@@ -272,7 +282,7 @@ conda activate geoint
 python plot_maps.py
 ```
 
-**Requires:** `interpolate.py` must have been run first.
+**Requires:** `interpolate.py` must have been run first. Or run all three scripts together with `bash run_all.sh` (see [Overview](#overview)).
 
 #### Output maps
 
@@ -295,9 +305,9 @@ Also prints the formation rock volume and pore volume to the console.
 
 ---
 
-### `cpg_export.py`
+### `cpg_export.py` *(optional — reservoir simulation only)*
 
-**Purpose:** Constructs a fully Eclipse-compatible corner-point grid from the kriged surfaces and writes it as a `.grdecl` file.
+**Purpose:** Constructs a fully Eclipse-compatible corner-point grid from the kriged surfaces and writes it as a `.grdecl` file. Only needed if you intend to run a reservoir simulation.
 
 **Run:**
 ```bash
@@ -305,7 +315,7 @@ conda activate geoint
 python cpg_export.py
 ```
 
-**Requires:** `interpolate.py` must have been run first.
+Or uncomment the `cpg_export.py` block in `run_all.sh` to include it in the automated run.
 
 #### Processing steps
 
