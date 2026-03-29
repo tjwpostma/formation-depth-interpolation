@@ -1,0 +1,3 @@
+output/**/*.npz
+output/**/*.grdecl
+# keep the PNGs
